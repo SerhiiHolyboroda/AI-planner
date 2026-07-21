@@ -8,7 +8,10 @@ estimates. Runs on Next.js, deploys free on Vercel.
 - Voice (Ukrainian or English) or text capture, via the browser's native
   Web Speech API
 - Gemini 3.1 Flash-Lite structures free text into tasks: time, priority,
-  deadline, realistic duration, difficulty, and AI-generated smart tags
+  deadline, realistic duration, difficulty, AI-generated smart tags, and a
+  recommended real tool/app/AI to help complete each task (e.g. ChatGPT for
+  drafting, Canva for a design, Calendly for scheduling a call) -- editable
+  per task in the detail view if the suggestion isn't quite right
 - Today / Week views
 - Tap any task to open, edit, add notes and subtasks
 - Filter by priority and by smart tags
@@ -24,6 +27,18 @@ estimates. Runs on Next.js, deploys free on Vercel.
 - "Auto-plan hard tasks -> morning" — a free, instant client-side heuristic
   that pulls your undone, high-priority/high-difficulty tasks into
   sequential morning slots starting 8:00am
+- Voice commands to reschedule existing tasks -- just speak or type things
+  like "перемісти зустріч на завтра о 15:00" or "move the deck review to
+  Friday". The same composer/button used to add tasks sends your current
+  task list to Gemini along with the text, and Gemini itself decides
+  whether you're describing new task(s) or asking to move an existing one
+  (rather than the app pre-guessing off a fixed keyword list, which missed
+  a lot of real phrasing). If it's a move, it finds the matching task by
+  meaning (fuzzy -- voice transcription doesn't have to be exact) and
+  reschedules it, closing the gap in its old day the same way dragging
+  does. (Internally this matches by array index rather than task id, since
+  models are unreliable at copying long ids back exactly -- an index is
+  just a small number, which they get right consistently.)
 - Tasks persist in the browser's localStorage — private to your device,
   no database needed
 
@@ -70,7 +85,7 @@ On Android: open in Chrome -> menu -> "Add to Home screen".
 - The Gemini key lives only on the server (`app/api/parse/route.js`),
   never sent to the browser.
 - Data model per task: title, time, priority, deadline, duration_minutes,
-  difficulty, tags[], notes, subtasks[], done, order.
+  difficulty, tags[], suggested_tool, notes, subtasks[], done, order.
 - Model used: `gemini-3.1-flash-lite`. Swap the `MODEL` constant in
   `app/api/parse/route.js` if you want a different one.
 - Storage key bumped to `rail.tasks.v2` since the data shape changed

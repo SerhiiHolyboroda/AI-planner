@@ -108,6 +108,7 @@ export default function Page() {
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [commandMessage, setCommandMessage] = useState("");
   const [lang, setLang] = useState("uk");
   const [view, setView] = useState("today");
   const [filterPriorities, setFilterPriorities] = useState(new Set());
@@ -235,21 +236,49 @@ export default function Page() {
     else { setError(""); recognitionRef.current.start(); setListening(true); }
   }
 
+  // Single entry point for the composer. Sends the text AND the current
+  // task list to Gemini, which decides for itself whether this describes
+  // new task(s) or a command to reschedule an existing one -- far more
+  // reliable than trying to pre-guess intent from a fixed keyword list.
   async function structureIt() {
     if (!text.trim()) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setCommandMessage("");
     try {
+      const existingTasks = tasks
+        .filter((tk) => !tk.done)
+        .map((tk) => ({ id: tk.id, title: tk.title, time: tk.time, deadline: tk.deadline }));
       const res = await fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, now: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lang }),
+        body: JSON.stringify({
+          text, now: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          lang, existingTasks,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Request failed (${res.status})`);
       }
-      const data = await res.json();
-      const newTasks = (data.tasks || []).map((tk) => ({
+      const result = await res.json();
+
+      if (result.action === "move") {
+        // The model returns an array INDEX into the existingTasks list we
+        // sent, not the task's id -- ids are long opaque UUIDs that models
+        // are unreliable at copying back exactly, which silently broke
+        // every move whose id got mangled. An index is just a small
+        // integer, which models reproduce correctly.
+        const matchedTask = typeof result.move_task_index === "number" ? existingTasks[result.move_task_index] : null;
+        if (matchedTask) {
+          const dateKeyPatch = result.move_new_date === null ? undefined : result.move_new_date === "unscheduled" ? null : result.move_new_date;
+          const timePatch = result.move_new_time === null ? undefined : result.move_new_time === "clear" ? null : result.move_new_time;
+          commandMoveTask(matchedTask.id, dateKeyPatch, timePatch);
+          setText("");
+        }
+        setCommandMessage(result.move_message || "");
+        return;
+      }
+
+      const newTasks = (result.tasks || []).map((tk) => ({
         ...tk, id: crypto.randomUUID(), done: false, notes: "", subtasks: [],
         tags: tk.tags || [], difficulty: tk.difficulty || "medium",
       }));
@@ -278,6 +307,33 @@ export default function Page() {
     });
   }
   function clearAll() { setTasks([]); saveTasks([]); }
+
+  // Applies a voice-command move: dateKeyPatch/timePatch follow JS
+  // "undefined means don't touch this field" convention (null is a valid,
+  // meaningful value -- it means "clear this field").
+  function commandMoveTask(taskId, dateKeyPatch, timePatch) {
+    setTasks((prev) => {
+      const dragged = prev.find((tk) => tk.id === taskId);
+      if (!dragged) return prev;
+      const sourceKey = groupKey(dragged);
+      const moved = {
+        ...dragged,
+        deadline: dateKeyPatch === undefined ? dragged.deadline : dateKeyPatch,
+        time: timePatch === undefined ? dragged.time : timePatch,
+      };
+      const destKey = groupKey(moved);
+      const rest = prev.filter((tk) => tk.id !== taskId && groupKey(tk) !== destKey && groupKey(tk) !== sourceKey);
+      const destOthers = prev.filter((tk) => groupKey(tk) === destKey && tk.id !== taskId);
+
+      if (sourceKey === destKey) {
+        const merged = [...rest, ...destOthers, moved];
+        saveTasks(merged); return merged;
+      }
+      const sourceRemaining = prev.filter((tk) => groupKey(tk) === sourceKey && tk.id !== taskId);
+      const merged = [...rest, ...reflowDay(sourceRemaining), ...destOthers, moved];
+      saveTasks(merged); return merged;
+    });
+  }
 
   // Drop a task onto a free hour: it simply takes that exact time. The day
   // it came from (if different) gets its gap closed.
@@ -446,6 +502,7 @@ export default function Page() {
           </button>
         </div>
         {error && <p style={styles.errorText}>{error}</p>}
+        {!error && commandMessage && <p style={styles.commandText}>{commandMessage}</p>}
       </section>
 
       <div style={styles.tabRow}>
@@ -549,6 +606,7 @@ export default function Page() {
                             <span style={styles.metaText}>{(tk.subtasks || []).filter((s) => s.done).length}/{(tk.subtasks || []).length}</span>
                           )}
                           {(tk.tags || []).map((tag) => (<span key={tag} style={styles.metaTag}>#{tag}</span>))}
+                          {tk.suggested_tool && <span style={styles.toolChip}>{"\uD83D\uDD27 " + tk.suggested_tool}</span>}
                         </div>
                       </div>
                     </div>
@@ -593,6 +651,7 @@ const styles = {
   micButton: { flex: "0 0 auto", border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 15, fontWeight: 600 },
   primaryButton: { flex: 1, border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 15, fontWeight: 600, background: "var(--low)", color: "var(--ink)" },
   errorText: { color: "var(--high)", fontSize: 13, marginTop: 8, marginBottom: 0 },
+  commandText: { color: "var(--low)", fontSize: 13, marginTop: 8, marginBottom: 0 },
   tabRow: { display: "flex", gap: 8, marginTop: 22, alignItems: "center" },
   tab: { border: "none", borderRadius: 999, padding: "8px 16px", fontSize: 14, fontWeight: 600, background: "transparent", color: "var(--paper-dim)" },
   tabActive: { background: "var(--paper)", color: "var(--ink)" },
@@ -618,6 +677,10 @@ const styles = {
   priorityChip: { fontFamily: "var(--font-mono)", fontSize: 11, border: "1px solid", borderRadius: 999, padding: "1px 8px", textTransform: "uppercase" },
   metaText: { fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--paper-dim)" },
   metaTag: { fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--low)" },
+  toolChip: {
+    fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--medium)",
+    border: "1px solid var(--medium)", borderRadius: 999, padding: "1px 8px",
+  },
   freeSlot: {
     display: "flex", alignItems: "center", gap: 8,
     minHeight: 40, padding: "0 0 0 12px", marginLeft: -7,

@@ -15,12 +15,14 @@ const T = {
     priority: "Пріоритет", tags: "Теги", addTag: "Додати тег…", notes: "Нотатки",
     notesPlaceholder: "Довільні нотатки до завдання…", subtasks: "Підзавдання",
     addSubtask: "Нове підзавдання…", delete: "Видалити завдання", close: "Готово",
+    tool: "Рекомендований інструмент", toolPlaceholder: "напр. ChatGPT, Canva, Calendly…",
   },
   en: {
     title: "Title", time: "Time", deadline: "Deadline", duration: "Duration (min)",
     priority: "Priority", tags: "Tags", addTag: "Add tag…", notes: "Notes",
     notesPlaceholder: "Freeform notes about this task…", subtasks: "Subtasks",
     addSubtask: "New subtask…", delete: "Delete task", close: "Done",
+    tool: "Recommended tool", toolPlaceholder: "e.g. ChatGPT, Canva, Calendly…",
   },
 };
 
@@ -105,6 +107,14 @@ export default function TaskDetailSheet({ task, lang, onChange, onClose, onDelet
           onChange={(e) =>
             patch({ duration_minutes: e.target.value ? Number(e.target.value) : null })
           }
+        />
+
+        <label style={styles.label}>{t.tool}</label>
+        <input
+          style={styles.input}
+          placeholder={t.toolPlaceholder}
+          value={task.suggested_tool || ""}
+          onChange={(e) => patch({ suggested_tool: e.target.value || null })}
         />
 
         <label style={styles.label}>{t.priority}</label>
