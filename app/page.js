@@ -117,14 +117,34 @@ export default function Page() {
   const [dragPointer, setDragPointer] = useState(null); // {x, y} in viewport coords
   const [dragOverKey, setDragOverKey] = useState(null);  // "dateKey|free|minutes" or "dateKey|task|id"
   const draggingTaskRef = useRef(null); // the task object being dragged, for the floating ghost label
+  const lastPointerRef = useRef({ x: 0, y: 0 }); // latest pointer position, kept even while finger is still
+  const dragOverKeyRef = useRef(null); // mirrors dragOverKey, readable inside the scroll loop
   const recognitionRef = useRef(null);
   const t = T[lang] || T.en;
+
+  // How close to the top/bottom edge of the screen (in px) triggers
+  // auto-scroll, and how fast that scroll moves -- tuned for a phone-sized
+  // viewport where a whole week of days doesn't fit on screen at once.
+  const SCROLL_EDGE = 90;
+  const SCROLL_SPEED = 14;
+
+  function updateDragOverFromPoint(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const dropEl = el && el.closest ? el.closest("[data-drop-key]") : null;
+    const key = dropEl ? dropEl.getAttribute("data-drop-key") : null;
+    if (key !== dragOverKeyRef.current) {
+      dragOverKeyRef.current = key;
+      setDragOverKey(key);
+    }
+  }
 
   function handleDragStart(e, tk, dateKeyOfTask) {
     e.preventDefault();
     draggingTaskRef.current = tk;
     setDraggingId(tk.id);
     setDragPointer({ x: e.clientX, y: e.clientY });
+    lastPointerRef.current = { x: e.clientX, y: e.clientY };
+    dragOverKeyRef.current = null;
     setDragOverKey(null);
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   }
@@ -132,23 +152,45 @@ export default function Page() {
   function handleDragMove(e) {
     if (!draggingId) return;
     e.preventDefault();
+    lastPointerRef.current = { x: e.clientX, y: e.clientY };
     setDragPointer({ x: e.clientX, y: e.clientY });
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const dropEl = el && el.closest ? el.closest("[data-drop-key]") : null;
-    setDragOverKey(dropEl ? dropEl.getAttribute("data-drop-key") : null);
+    updateDragOverFromPoint(e.clientX, e.clientY);
   }
 
   function handleDragEnd() {
-    if (draggingId && dragOverKey) {
-      const [dateKey, kind, val] = dragOverKey.split("|");
+    if (draggingId && dragOverKeyRef.current) {
+      const [dateKey, kind, val] = dragOverKeyRef.current.split("|");
       if (kind === "free") dropOnFreeHour(dateKey, draggingId, Number(val));
       else if (kind === "task" && val !== draggingId) dropOnTask(dateKey, draggingId, val);
     }
     draggingTaskRef.current = null;
+    dragOverKeyRef.current = null;
     setDraggingId(null);
     setDragPointer(null);
     setDragOverKey(null);
   }
+
+  // Auto-scrolls the page while a finger/cursor is held near the top or
+  // bottom edge during a drag -- essential on mobile, where a whole week
+  // of days is usually taller than the screen. Keeps the highlighted drop
+  // target in sync as the page scrolls underneath a stationary pointer.
+  useEffect(() => {
+    if (!draggingId) return;
+    let rafId;
+    function tick() {
+      const { x, y } = lastPointerRef.current;
+      const vh = window.innerHeight;
+      if (y < SCROLL_EDGE) {
+        window.scrollBy(0, -SCROLL_SPEED * (1 - y / SCROLL_EDGE));
+      } else if (y > vh - SCROLL_EDGE) {
+        window.scrollBy(0, SCROLL_SPEED * (1 - (vh - y) / SCROLL_EDGE));
+      }
+      updateDragOverFromPoint(x, y);
+      rafId = requestAnimationFrame(tick);
+    }
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [draggingId]);
 
   useEffect(() => {
     setTasks(loadTasks());
@@ -300,8 +342,13 @@ export default function Page() {
     const todayStr = toISODate(new Date());
     const MORNING_START = 8 * 60, MORNING_END = 12 * 60, WINDOW = MORNING_END - MORNING_START;
     setTasks((prev) => {
+      // Any not-done, high-priority (or high-difficulty) task due today or
+      // with no date gets pulled into the morning -- regardless of whether
+      // it already had some other time set. (Previously this required
+      // !tk.time, which meant almost nothing ever qualified, since most
+      // tasks get a time from the AI parse or from dragging.)
       const candidates = prev.filter(
-        (tk) => !tk.time && !tk.done && (tk.difficulty === "high" || tk.priority === "high") && (tk.deadline === todayStr || !tk.deadline)
+        (tk) => !tk.done && (tk.difficulty === "high" || tk.priority === "high") && (tk.deadline === todayStr || !tk.deadline)
       );
       if (!candidates.length) return prev;
       const others = prev.filter((tk) => !candidates.includes(tk));
@@ -573,8 +620,8 @@ const styles = {
   metaTag: { fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--low)" },
   freeSlot: {
     display: "flex", alignItems: "center", gap: 8,
-    padding: "5px 0 5px 12px", marginLeft: -7,
-    border: "1px dashed var(--rail)", borderRadius: 6, marginBottom: 3,
+    minHeight: 40, padding: "0 0 0 12px", marginLeft: -7,
+    border: "1px dashed var(--rail)", borderRadius: 8, marginBottom: 6,
   },
   freeSlotActive: {
     border: "1px dashed var(--low)", background: "rgba(76,154,139,0.16)",
