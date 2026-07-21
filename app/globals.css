@@ -1,0 +1,38 @@
+:root {
+  --ink: #14181f;
+  --ink-raised: #1c2129;
+  --paper: #edeff3;
+  --paper-dim: #c7cbd4;
+  --rail: #3a4150;
+  --high: #e0574c;
+  --medium: #d9a441;
+  --low: #4c9a8b;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
