@@ -38,7 +38,10 @@ estimates. Runs on Next.js, deploys free on Vercel.
   reschedules it, closing the gap in its old day the same way dragging
   does. (Internally this matches by array index rather than task id, since
   models are unreliable at copying long ids back exactly -- an index is
-  just a small number, which they get right consistently.)
+  just a small number, which they get right consistently.) A matching
+  title alone never triggers a move -- an explicit move-verb
+  ("перемісти"/"move"/etc.) must be present, so saying "add a task called
+  X" creates a second X instead of relocating the existing one.
 - Tasks persist in the browser's localStorage — private to your device,
   no database needed
 

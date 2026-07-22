@@ -54,7 +54,7 @@ const RESPONSE_SCHEMA = {
       type: "STRING",
       enum: ["create", "move"],
       description:
-        "'create' if the text describes one or more NEW tasks to add. 'move' if the text is a command to reschedule/move an EXISTING task that's already in the provided task list (using verbs like move/reschedule/shift/postpone/перемісти/пересунь/перенеси/зміни час, or any phrasing that clearly refers to an existing task by name and asks to change its time or date). When genuinely ambiguous, prefer 'create'.",
+        "'create' if the text describes one or more NEW tasks to add -- including when its title happens to match or resemble a task already in the list (that alone is never a reason to pick 'move'; the person may want a separate, similar-sounding task). 'move' applies ONLY when there's an explicit reschedule/move verb present (move/reschedule/shift/postpone/перемісти/пересунь/перенеси/зміни час, or a conjugation of these) AND it refers to an existing task in the provided list. Without that explicit verb, always use 'create'. When genuinely ambiguous, prefer 'create'.",
     },
     tasks: {
       type: "ARRAY",
@@ -122,8 +122,9 @@ Context: today is ${weekday}, ${todayIso}. Timezone: ${tz || "unknown"}.
 The input may be in Ukrainian, English, or a mix of both (common with voice dictation).
 
 STEP 1 - Decide the action:
-- "create": the text describes one or more NEW tasks to add to the list.
-- "move": the text is a command to reschedule an EXISTING task already in the list below -- it names (even approximately -- voice transcription is often imperfect) a task from that list and asks to change its time and/or date, using verbs like "move/reschedule/shift/postpone/push back" or Ukrainian equivalents like "перемісти/пересунь/перенеси/передвинь/зміни час/поміняй час" (and their various conjugations), or simply states a new time/date for something already on the list.
+- "move" applies ONLY when the text contains an explicit reschedule/move instruction -- a verb or phrase like "move/reschedule/shift/postpone/push back/change the time" or Ukrainian equivalents like "перемісти/пересунь/перенеси/передвинь/зміни час/поміняй час" (and their conjugations). This explicit signal is REQUIRED, not optional.
+- "create" applies to everything else, INCLUDING when the text describes a task whose title happens to match or resemble one already in the list below. A matching title alone is never enough to justify "move" -- the person may simply want a second, separate task with a similar name (e.g. a recurring weekly task). Only treat it as "move" if an explicit move-verb is present AND a matching existing task can be found.
+Examples: "перемісти зустріч на п'ятницю" (has an explicit move-verb) -> "move". "додай завдання зустріч на понеділок" / "create a task called meeting for Monday" (no move-verb, even though "meeting"/"зустріч" might already exist in the list) -> "create".
 If genuinely ambiguous, prefer "create".
 
 Existing tasks the person might be referring to, as a 0-indexed array (title, current time, current deadline -- refer to a task ONLY by its position in this array, e.g. the first element is index 0):
